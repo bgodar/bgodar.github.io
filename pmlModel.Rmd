@@ -1,0 +1,88 @@
+---
+title: "Dumbell Model"
+author: "Bryna Godar"
+date: "September 18, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Predicting Quality of Dumbell Lifts
+
+Many people regularly measure how often they do a certain activity with the technology now available, but few actually quantify how well they do that activity. This data analysis and predictive modeling project utilizes data from six participants who wore accelerometers on their belt, forearm, arm and dumbell while performing lifts correctly and incorrectly in five different ways. The final model aims to predict in which manner they did the exercise.
+
+## Read in Data
+
+The data was already divided into training and testing sets, so I read the data into R from those two sets.
+
+```{r}
+library(caret)
+setwd("~/Coursera/PMLProject")
+testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE)
+training <- read.csv("pml-training.csv", stringsAsFactors = FALSE)
+```
+
+## Selecting Features
+
+Before truly delving into the data analysis, I removed the variables that would clearly not provide good indicators for predicting the movement, including the user name, the index X number, the three timestamps and the window information. Some of the features were also incorrectly imported as character classes due to NA values listed as "#DIV/0! or other NA values, so I converted all columns except the classe column to numeric.
+
+```{r}
+training2 <- training[, -(1:7)]
+training2[ , -153] <- apply(training2[,-153], 2, function(x) as.numeric(x))
+```
+
+In the exploratory data analysis phase, I then found that 100 of the features had more than 90 percent of the values missing (NA). I checked to be sure they were missing consistently across the five classes of performance (A-E), which they were, so I decided not to use those features in the data analysis. 
+```{r}
+nacount <- apply(training2[,-153], 2, function(x) sum(is.na(x)))
+napct <- nacount/nrow(training2)
+naRemove <- napct >= .90
+sum(naRemove)
+```
+
+Removing >90% NA features left me with 53 features remaining.
+```{r}
+use <- colnames(training2[!naRemove])
+training2 <- training2[, use]
+```
+
+I then also checked to see if there were covariates with near zero variance, which there weren't.
+```{r}
+nsv <- nearZeroVar(training2, saveMetrics = TRUE)
+nsv
+```
+
+## Selecting a Method and Cross Validation
+
+In choosing what modeling method to select, I decided a random forest model would be the best choice, because the outcomes I was striving to predict were groupings, or factor variables, and random forests are typically among the most accurate prediction models.
+
+In choosing which train control arguments to pass to the train() function, I used 10-fold cross validation. I also allowed for parallel processing to speed up the process (as recommended by a Practical Machine Learning mentor here: https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md ).
+
+```{r}
+rfControl <- trainControl(method = "cv",
+                           number = 10,
+                           allowParallel = TRUE)
+
+# Configure parallel processing
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+```
+
+In further effort to speed up the process, I split my training dataset into x (features) and y (outcome). I then fit my model using the Random Forest ("rf") method.
+```{r}
+x <- training2[,-53]
+y <- training2[,53]
+modRF <- train(x,y, method="rf",data=training2,trControl = rfControl)
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+## Final Model and Out of Sample Error
+
+The final model has 99.6 percent accuracy on the training set, with an estimated out of sample error of 0.4 percent.
+```{r}
+modRF
+```
